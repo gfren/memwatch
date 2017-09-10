@@ -115,6 +115,8 @@
 #include <setjmp.h>
 #include <time.h>
 #include <limits.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include "memwatch.h"
 
 #ifndef toupper
@@ -146,6 +148,8 @@
 /*lint -restore */
 
 #define MW_NML      0x0001
+
+#define MW_STATIC   //static
 
 #ifdef _MSC_VER
 #define COMMIT "c"  /* Microsoft C requires the 'c' to perform as desired */
@@ -306,115 +310,134 @@ typedef pthread_mutex_t mwMutex;
 ** Static variables
 ***********************************************************************/
 
-static int      mwInited =      0;
-static int      mwInfoWritten = 0;
-static int      mwUseAtexit =   0;
-static FILE*    mwLog =         NULL;
-static int      mwFlushing =    0;
-static int      mwStatLevel =   MW_STAT_DEFAULT;
-static int      mwNML =         MW_NML_DEFAULT;
-static int      mwFBI =         0;
-static long     mwAllocLimit =  0L;
-static int      mwUseLimit =    0;
+MW_STATIC int      mwInited =      0;
+MW_STATIC int      mwInfoWritten = 0;
+MW_STATIC int      mwUseAtexit =   0;
+MW_STATIC FILE*    mwLog =         NULL;
+MW_STATIC int      mwFlushing =    0;
+MW_STATIC int      mwStatLevel =   MW_STAT_LINE;
+MW_STATIC int      mwNML =         MW_NML_DEFAULT;
+MW_STATIC int      mwFBI =         0;
+MW_STATIC long     mwAllocLimit =  0L;
+MW_STATIC int      mwUseLimit =    0;
 
-static long     mwNumCurAlloc = 0L;
-static mwData*  mwHead = 		NULL;
-static mwData*  mwTail = 		NULL;
-static int		mwDataSize =	0;
-static unsigned char mwOverflowZoneTemplate[] = "mEmwAtch";
-static int		mwOverflowZoneSize = mwROUNDALLOC;
+MW_STATIC long     mwNumCurAlloc = 0L;
+MW_STATIC mwData*  mwHead = 		NULL;
+MW_STATIC mwData*  mwTail = 		NULL;
+MW_STATIC int		mwDataSize =	0;
+MW_STATIC unsigned char mwOverflowZoneTemplate[] = "mEmwAtch";
+MW_STATIC int		mwOverflowZoneSize = mwROUNDALLOC;
 
-static void     (*mwOutFunction)(int) = NULL;
-static int      (*mwAriFunction)(const char*) = NULL;
-static int      mwAriAction = MW_ARI_ABORT;
+MW_STATIC void     (*mwOutFunction)(int) = NULL;
+MW_STATIC int      (*mwAriFunction)(const char*) = NULL;
+MW_STATIC int      mwAriAction = MW_ARI_ABORT;
 
-static char     mwPrintBuf[MW_TRACE_BUFFER+8];
+MW_STATIC char     mwPrintBuf[MW_TRACE_BUFFER+8];
 
-static unsigned long mwCounter = 0L;
-static long     mwErrors =      0L;
+MW_STATIC unsigned long mwCounter = 0L;
+MW_STATIC long     mwErrors =      0L;
 
-static int      mwTestFlags =   0;
-static int      mwTestAlways =  0;
+MW_STATIC int      mwTestFlags =   0;
+MW_STATIC int      mwTestAlways =  0;
 
-static FILE*    mwLogB1 =       NULL;
-static int      mwFlushingB1 =  0;
+MW_STATIC FILE*    mwLogB1 =       NULL;
+MW_STATIC int      mwFlushingB1 =  0;
 
-static mwStat*  mwStatList = NULL;
-static long     mwStatTotAlloc = 0L;
-static long     mwStatMaxAlloc = 0L;
-static long     mwStatNumAlloc = 0L;
-static long     mwStatCurAlloc = 0L;
-static long     mwNmlNumAlloc = 0L;
-static long     mwNmlCurAlloc = 0L;
+MW_STATIC mwStat*  mwStatList = NULL;
+MW_STATIC long     mwStatTotAlloc = 0L;
+MW_STATIC long     mwStatMaxAlloc = 0L;
+MW_STATIC long     mwStatNumAlloc = 0L;
+MW_STATIC long     mwStatCurAlloc = 0L;
+MW_STATIC long     mwNmlNumAlloc = 0L;
+MW_STATIC long     mwNmlCurAlloc = 0L;
 
-static mwGrabData* mwGrabList = NULL;
-static long     mwGrabSize = 0L;
+MW_STATIC mwGrabData* mwGrabList = NULL;
+MW_STATIC long     mwGrabSize = 0L;
 
-static void *   mwLastFree[MW_FREE_LIST];
-static const char *mwLFfile[MW_FREE_LIST];
-static int      mwLFline[MW_FREE_LIST];
-static int      mwLFcur = 0;
+MW_STATIC void *   mwLastFree[MW_FREE_LIST];
+MW_STATIC const char *mwLFfile[MW_FREE_LIST];
+MW_STATIC int      mwLFline[MW_FREE_LIST];
+MW_STATIC int      mwLFcur = 0;
 
-static mwMarker* mwFirstMark = NULL;
+MW_STATIC mwMarker* mwFirstMark = NULL;
 
-static FILE*    mwLogB2 =       NULL;
-static int      mwFlushingB2 =  0;
+MW_STATIC FILE*    mwLogB2 =       NULL;
+MW_STATIC int      mwFlushingB2 =  0;
 
 #ifdef MW_HAVE_MUTEX
-static mwMutex	mwGlobalMutex;
+MW_STATIC mwMutex	mwGlobalMutex;
 #endif
 
 /***********************************************************************
 ** Static function declarations
 ***********************************************************************/
 
-static void     mwAutoInit( void );
-static FILE*    mwLogR( void );
-static void     mwLogW( FILE* );
-static int      mwFlushR( void );
-static void     mwFlushW( int );
-static void     mwFlush( void );
-static void     mwIncErr( void );
-static void     mwUnlink( mwData*, const char* file, int line );
-static int      mwRelink( mwData*, const char* file, int line );
-static int      mwIsHeapOK( mwData *mw );
-static int      mwIsOwned( mwData* mw, const char* file, int line );
-static int      mwTestBuf( mwData* mw, const char* file, int line );
-static void     mwDefaultOutFunc( int );
-static void     mwWrite( const char* format, ... );
-static void     mwLogFile( const char* name );
-static size_t   mwFreeUp( size_t, int );
-static const void *mwTestMem( const void *, unsigned, int );
-static int      mwStrCmpI( const char *s1, const char *s2 );
-static int      mwTestNow( const char *file, int line, int always_invoked );
-static void     mwDropAll( void );
-static const char *mwGrabType( int type );
-static unsigned mwGrab_( unsigned kb, int type, int silent );
-static unsigned mwDrop_( unsigned kb, int type, int silent );
-static int      mwARI( const char* text );
-static void     mwStatReport( void );
-static mwStat*  mwStatGet( const char*, int, int );
-static void     mwStatAlloc( size_t, const char*, int );
-static void     mwStatFree( size_t, const char*, int );
-static int		mwCheckOF( const void * p );
-static void		mwWriteOF( void * p );
-static char		mwDummy( char c );
+MW_STATIC void     mwAutoInit( void );
+MW_STATIC FILE*    mwLogR( void );
+MW_STATIC void     mwLogW( FILE* );
+MW_STATIC int      mwFlushR( void );
+MW_STATIC void     mwFlushW( int );
+MW_STATIC void     mwFlush( void );
+MW_STATIC void     mwIncErr( void );
+MW_STATIC void     mwUnlink( mwData*, const char* file, int line );
+MW_STATIC int      mwRelink( mwData*, const char* file, int line );
+MW_STATIC int      mwIsHeapOK( mwData *mw );
+MW_STATIC int      mwIsOwned( mwData* mw, const char* file, int line );
+MW_STATIC int      mwTestBuf( mwData* mw, const char* file, int line );
+MW_STATIC void     mwDefaultOutFunc( int );
+MW_STATIC void     mwWrite( const char* format, ... );
+MW_STATIC void     mwLogFile( const char* name );
+MW_STATIC size_t   mwFreeUp( size_t, int );
+MW_STATIC const void *mwTestMem( const void *, unsigned, int );
+MW_STATIC int      mwStrCmpI( const char *s1, const char *s2 );
+MW_STATIC int      mwTestNow( const char *file, int line, int always_invoked );
+MW_STATIC void     mwDropAll( void );
+MW_STATIC const char *mwGrabType( int type );
+MW_STATIC unsigned mwGrab_( unsigned kb, int type, int silent );
+MW_STATIC unsigned mwDrop_( unsigned kb, int type, int silent );
+MW_STATIC int      mwARI( const char* text );
+MW_STATIC void     mwStatReport( void );
+MW_STATIC mwStat*  mwStatGet( const char*, int, int );
+MW_STATIC void     mwStatAlloc( size_t, const char*, int );
+MW_STATIC void     mwStatFree( size_t, const char*, int );
+MW_STATIC int		mwCheckOF( const void * p );
+MW_STATIC void		mwWriteOF( void * p );
+MW_STATIC char		mwDummy( char c );
+MW_STATIC void* mwMallocNoLock( size_t size, const char* file, int line);
+MW_STATIC void mwFreeNoLock( void* p, const char* file, int line );
+
 #ifdef MW_HAVE_MUTEX
-static void		mwMutexInit( void );
-static void		mwMutexTerm( void );
-static void		mwMutexLock( void );
-static void		mwMutexUnlock( void );
+MW_STATIC void		mwMutexInit( void );
+MW_STATIC void		mwMutexTerm( void );
+MW_STATIC void		mwMutexLock( void );
+MW_STATIC void		mwMutexUnlock( void );
 #endif
 
 /***********************************************************************
 ** System functions
 ***********************************************************************/
 
+MW_STATIC void mwSigProc(int sig) {
+
+	if (sig != SIGQUIT)
+		return;
+
+	mwStatReport();
+	return;
+}
+
+MW_STATIC void mwSigInit ( void ) {
+
+	signal(SIGQUIT, mwSigProc);
+	return;
+}
+
 void mwInit( void ) {
     time_t tid;
 
     if( mwInited++ > 0 ) return;
 
+	mwSigInit();
 	MW_MUTEX_INIT();
 
     /* start a log if none is running */
@@ -657,7 +680,7 @@ void mwSetOutFunc( void (*func)(int) ) {
     mwOutFunction = func;
     }
 
-static void mwWriteOF( void *p )
+MW_STATIC void mwWriteOF( void *p )
 {
 	int i;
 	unsigned char *ptr;
@@ -669,7 +692,7 @@ static void mwWriteOF( void *p )
 	return;
 }
 
-static int mwCheckOF( const void *p )
+MW_STATIC int mwCheckOF( const void *p )
 {
 	int i;
 	const unsigned char *ptr;
@@ -829,7 +852,7 @@ void* mwUnmark( void *p, const char *file, unsigned line ) {
 ** Abort/Retry/Ignore handlers
 ***********************************************************************/
 
-static int mwARI( const char *estr ) {
+MW_STATIC int mwARI( const char *estr ) {
     char inbuf[81];
     int c;
     fprintf(mwSTDERR, "\n%s\nMEMWATCH: Abort, Retry or Ignore? ", estr);
@@ -860,15 +883,13 @@ void mwSetAriFunc( int (*func)(const char *) ) {
 ** Allocation handlers
 ***********************************************************************/
 
-void* mwMalloc( size_t size, const char* file, int line) {
+MW_STATIC void* mwMallocNoLock( size_t size, const char* file, int line) {
     size_t needed;
     mwData *mw;
     char *ptr;
     void *p;
 
     mwAutoInit();
-
-	MW_MUTEX_LOCK();
 
     TESTS(file,line);
 
@@ -886,7 +907,6 @@ void* mwMalloc( size_t size, const char* file, int line) {
             mwCounter, file, line, (long)size, mwAllocLimit - mwStatCurAlloc );
         mwIncErr();
         FLUSH();
-		MW_MUTEX_UNLOCK();
         return NULL;
         }
 
@@ -905,7 +925,6 @@ void* mwMalloc( size_t size, const char* file, int line) {
                 mwCounter, file, line, (long)size, mwStatCurAlloc );
             mwIncErr();
             FLUSH();
-			MW_MUTEX_UNLOCK();
             return NULL;
             }
         }
@@ -940,9 +959,21 @@ void* mwMalloc( size_t size, const char* file, int line) {
 
     if( mwStatLevel ) mwStatAlloc( size, file, line );
 
-	MW_MUTEX_UNLOCK();
     return p;
     }
+
+void* mwMalloc( size_t size, const char* file, int line) {
+
+	char *p;
+
+    mwAutoInit();
+
+	MW_MUTEX_LOCK();
+	p = mwMallocNoLock(size, file, line);
+	MW_MUTEX_UNLOCK();
+
+	return p;
+}
 
 void* mwRealloc( void *p, size_t size, const char* file, int line) {
     int oldUseLimit, i;
@@ -987,13 +1018,13 @@ void* mwRealloc( void *p, size_t size, const char* file, int line) {
         /* fake realloc operation */
         oldUseLimit = mwUseLimit;
         mwUseLimit = 0;
-        ptr = (char*) mwMalloc( size, file, line );
+        ptr = (char*) mwMallocNoLock( size, file, line );
         if( ptr != NULL ) {
             if( size < mw->size )
                 memcpy( ptr, p, size );
             else
                 memcpy( ptr, p, mw->size );
-            mwFree( p, file, line );
+            mwFreeNoLock( p, file, line );
             }
         mwUseLimit = oldUseLimit;
 		MW_MUTEX_UNLOCK();
@@ -1048,7 +1079,7 @@ char *mwStrdup( const char* str, const char* file, int line ) {
     return newstring;
     }
 
-void mwFree( void* p, const char* file, int line ) {
+MW_STATIC void mwFreeNoLock( void* p, const char* file, int line ) {
     int i;
     mwData* mw;
     char buffer[ sizeof(mwData) + (mwROUNDALLOC*3) + 64 ];
@@ -1056,13 +1087,11 @@ void mwFree( void* p, const char* file, int line ) {
     /* this code is in support of C++ delete */
     if( file == NULL ) {
         mwFree_( p );
-		MW_MUTEX_UNLOCK();
         return;
         }
 
     mwAutoInit();
 
-	MW_MUTEX_LOCK();
     TESTS(file,line);
     mwCounter ++;
 
@@ -1071,7 +1100,6 @@ void mwFree( void* p, const char* file, int line ) {
         mwWrite( "NULL free: <%ld> %s(%d), NULL pointer free'd\n",
             mwCounter, file, line );
         FLUSH();
-		MW_MUTEX_UNLOCK();
         return;
         }
 
@@ -1123,7 +1151,6 @@ void mwFree( void* p, const char* file, int line ) {
         mwLastFree[ mwLFcur++ ] = p;
         if( mwLFcur == MW_FREE_LIST ) mwLFcur = 0;
 
-		MW_MUTEX_UNLOCK();
         return;
         }
 
@@ -1137,7 +1164,6 @@ check_dbl_free:
                 mwCounter, file, line, p,
                 mwLFfile[i], mwLFline[i] );
             FLUSH();
-			MW_MUTEX_UNLOCK();
             return;
             }
         }
@@ -1147,9 +1173,20 @@ check_dbl_free:
     mwWrite( "WILD free: <%ld> %s(%d), unknown pointer %p\n",
         mwCounter, file, line, p );
     FLUSH();
-	MW_MUTEX_UNLOCK();
+
     return;
     }
+
+void mwFree( void* p, const char* file, int line ) {
+
+    mwAutoInit();
+
+	MW_MUTEX_LOCK();
+	mwFreeNoLock(p, file, line);
+	MW_MUTEX_UNLOCK();
+
+	return;
+}
 
 void* mwCalloc( size_t a, size_t b, const char *file, int line ) {
     void *p;
@@ -1379,7 +1416,7 @@ unsigned mwDrop( unsigned kb ) {
     return mwDrop_( kb, MW_VAL_GRB, 0 );
     }
 
-static void mwDropAll() {
+MW_STATIC void mwDropAll() {
     TESTS(NULL,0);
     (void) mwDrop_( 0, MW_VAL_GRB, 0 );
     (void) mwDrop_( 0, MW_VAL_NML, 0 );
@@ -1387,7 +1424,7 @@ static void mwDropAll() {
         mwWrite( "internal: the grab list is not empty after mwDropAll()\n");
     }
 
-static const char *mwGrabType( int type ) {
+MW_STATIC const char *mwGrabType( int type ) {
     switch( type ) {
         case MW_VAL_GRB:
             return "grabbed";
@@ -1400,7 +1437,7 @@ static const char *mwGrabType( int type ) {
     return "<unknown type>";
     }
 
-static unsigned mwGrab_( unsigned kb, int type, int silent ) {
+MW_STATIC unsigned mwGrab_( unsigned kb, int type, int silent ) {
     unsigned i = kb;
     mwGrabData *gd;
     if( !kb ) i = kb = 65000U;
@@ -1437,7 +1474,7 @@ static unsigned mwGrab_( unsigned kb, int type, int silent ) {
     return i;
     }
 
-static unsigned mwDrop_( unsigned kb, int type, int silent ) {
+MW_STATIC unsigned mwDrop_( unsigned kb, int type, int silent ) {
     unsigned i = kb;
     mwGrabData *gd,*tmp,*pr;
     const void *p;
@@ -1508,7 +1545,7 @@ void mwNoMansLand( int level ) {
 ** Static functions
 ***********************************************************************/
 
-static void mwAutoInit( void )
+MW_STATIC void mwAutoInit( void )
 {
     if( mwInited ) return;
     mwUseAtexit = 1;
@@ -1516,7 +1553,7 @@ static void mwAutoInit( void )
     return;
 }
 
-static FILE *mwLogR() {
+MW_STATIC FILE *mwLogR() {
     if( (mwLog == mwLogB1) && (mwLog == mwLogB2) ) return mwLog;
     if( mwLog == mwLogB1 ) mwLogB2 = mwLog;
     if( mwLog == mwLogB2 ) mwLogB1 = mwLog;
@@ -1531,11 +1568,11 @@ static FILE *mwLogR() {
     return mwSTDERR;
     }
 
-static void mwLogW( FILE *p ) {
+MW_STATIC void mwLogW( FILE *p ) {
     mwLog = mwLogB1 = mwLogB2 = p;
     }
 
-static int mwFlushR() {
+MW_STATIC int mwFlushR() {
     if( (mwFlushing == mwFlushingB1) && (mwFlushing == mwFlushingB2) ) return mwFlushing;
     if( mwFlushing == mwFlushingB1 ) mwFlushingB2 = mwFlushing;
     if( mwFlushing == mwFlushingB2 ) mwFlushingB1 = mwFlushing;
@@ -1550,17 +1587,17 @@ static int mwFlushR() {
     return 1;
     }
 
-static void mwFlushW( int n ) {
+MW_STATIC void mwFlushW( int n ) {
     mwFlushing = mwFlushingB1 = mwFlushingB2 = n;
     }
 
-static void mwIncErr() {
+MW_STATIC void mwIncErr() {
     mwErrors++;
     mwFlushW( mwFlushR()+1 );
     FLUSH();
     }
 
-static void mwFlush() {
+MW_STATIC void mwFlush() {
     if( mwLogR() == NULL ) return;
 #ifdef MW_FLUSH
     fflush( mwLogR() );
@@ -1570,7 +1607,7 @@ static void mwFlush() {
     return;
     }
 
-static void mwUnlink( mwData* mw, const char* file, int line ) {
+MW_STATIC void mwUnlink( mwData* mw, const char* file, int line ) {
     if( mw->prev == NULL ) {
         if( mwHead != mw )
             mwWrite( "internal: <%ld> %s(%d), MW-%p: link1 NULL, but not head\n",
@@ -1602,7 +1639,7 @@ static void mwUnlink( mwData* mw, const char* file, int line ) {
 ** Returns nonzero if it thinks it successfully
 ** repaired the heap chain.
 */
-static int mwRelink( mwData* mw, const char* file, int line ) {
+MW_STATIC int mwRelink( mwData* mw, const char* file, int line ) {
     int fails;
     mwData *mw1, *mw2;
     long count, size;
@@ -1896,7 +1933,7 @@ verifyok:
 **      Returns 0 if mwData* is missing or if chain is broken.
 **      Returns 1 if chain is intact and mwData* is found.
 */
-static int mwIsHeapOK( mwData *includes_mw ) {
+MW_STATIC int mwIsHeapOK( mwData *includes_mw ) {
     int found = 0;
     mwData *mw;
 
@@ -1919,7 +1956,7 @@ static int mwIsHeapOK( mwData *includes_mw ) {
     return 1;
     }
 
-static int mwIsOwned( mwData* mw, const char *file, int line ) {
+MW_STATIC int mwIsOwned( mwData* mw, const char *file, int line ) {
     int retv;
     mwStat *ms;
 
@@ -1987,7 +2024,7 @@ static int mwIsOwned( mwData* mw, const char *file, int line ) {
 **  Writes errors found to the log.
 **  Returns zero if no errors found.
 */
-static int mwTestBuf( mwData* mw, const char* file, int line ) {
+MW_STATIC int mwTestBuf( mwData* mw, const char* file, int line ) {
     int retv = 0;
     char *p;
 
@@ -2038,11 +2075,11 @@ static int mwTestBuf( mwData* mw, const char* file, int line ) {
     return retv;
     }
 
-static void mwDefaultOutFunc( int c ) {
+MW_STATIC void mwDefaultOutFunc( int c ) {
     if( mwLogR() ) fputc( c, mwLogR() );
     }
 
-static void mwWrite( const char *format, ... ) {
+MW_STATIC void mwWrite( const char *format, ... ) {
     int tot, oflow = 0;
     va_list mark;
     mwAutoInit();
@@ -2051,6 +2088,8 @@ static void mwWrite( const char *format, ... ) {
     tot = vsprintf( mwPrintBuf, format, mark );
     va_end( mark );
     if( tot >= MW_TRACE_BUFFER ) { mwPrintBuf[MW_TRACE_BUFFER] = 0; oflow = 1; }
+
+	printf("%s", mwPrintBuf);
     for(tot=0;mwPrintBuf[tot];tot++)
         (*mwOutFunction)( mwPrintBuf[tot] );
     if( oflow ) {
@@ -2060,7 +2099,7 @@ static void mwWrite( const char *format, ... ) {
     return;
     }
 
-static void mwLogFile( const char *name ) {
+MW_STATIC void mwLogFile( const char *name ) {
     time_t tid;
     (void) time( &tid );
     if( mwLogR() != NULL ) {
@@ -2079,7 +2118,7 @@ static void mwLogFile( const char *name ) {
 ** and the 'urgent' parameter is nonzero, grabbed memory is
 ** also freed.
 */
-static size_t mwFreeUp( size_t needed, int urgent ) {
+MW_STATIC size_t mwFreeUp( size_t needed, int urgent ) {
     void *p;
     mwData *mw, *mw2;
     char *data;
@@ -2130,7 +2169,7 @@ static size_t mwFreeUp( size_t needed, int urgent ) {
     return 0;
     }
 
-static const void * mwTestMem( const void *p, unsigned len, int c ) {
+MW_STATIC const void * mwTestMem( const void *p, unsigned len, int c ) {
     const unsigned char *ptr;
     ptr = (const unsigned char *) p;
     while( len-- ) {
@@ -2140,7 +2179,7 @@ static const void * mwTestMem( const void *p, unsigned len, int c ) {
     return NULL;
     }
 
-static int mwStrCmpI( const char *s1, const char *s2 ) {
+MW_STATIC int mwStrCmpI( const char *s1, const char *s2 ) {
     if( s1 == NULL || s2 == NULL ) return 0;
     while( *s1 ) {
         if( toupper(*s2) == toupper(*s1) ) { s1++; s2++; continue; }
@@ -2151,7 +2190,7 @@ static int mwStrCmpI( const char *s1, const char *s2 ) {
 
 #define AIPH() if( always_invoked ) { mwWrite("autocheck: <%ld> %s(%d) ", mwCounter, file, line ); always_invoked = 0; }
 
-static int mwTestNow( const char *file, int line, int always_invoked ) {
+MW_STATIC int mwTestNow( const char *file, int line, int always_invoked ) {
     int retv = 0;
     mwData *mw;
     char *data;
@@ -2237,7 +2276,7 @@ static int mwTestNow( const char *file, int line, int always_invoked ) {
 ** Statistics
 **********************************************************************/
 
-static void mwStatReport()
+MW_STATIC void mwStatReport()
 {
     mwStat* ms, *ms2;
     const char *modname;
@@ -2285,7 +2324,7 @@ static void mwStatReport()
 	}
 }
 
-static mwStat* mwStatGet( const char *file, int line, int makenew ) {
+MW_STATIC mwStat* mwStatGet( const char *file, int line, int makenew ) {
     mwStat* ms;
 
     if( mwStatLevel < 2 ) line = -1;
@@ -2323,7 +2362,7 @@ static mwStat* mwStatGet( const char *file, int line, int makenew ) {
     return ms;
     }
 
-static void mwStatAlloc( size_t size, const char* file, int line ) {
+MW_STATIC void mwStatAlloc( size_t size, const char* file, int line ) {
     mwStat* ms;
 
     /* update the module statistics */
@@ -2348,7 +2387,7 @@ static void mwStatAlloc( size_t size, const char* file, int line ) {
 
     }
 
-static void mwStatFree( size_t size, const char* file, int line ) {
+MW_STATIC void mwStatFree( size_t size, const char* file, int line ) {
     mwStat* ms;
 
     /* update the module statistics */
@@ -2370,7 +2409,7 @@ static void mwStatFree( size_t size, const char* file, int line ) {
 ** and write priviliges. Default: return nonzero for non-NULL pointers.
 ***********************************************************************/
 
-static char mwDummy( char c )
+MW_STATIC char mwDummy( char c )
 {
 	return c;
 }
@@ -2404,9 +2443,9 @@ int mwIsSafeAddr( void *p, unsigned len )
 typedef void (*mwSignalHandlerPtr)( int );
 mwSignalHandlerPtr mwOldSIGSEGV = (mwSignalHandlerPtr) 0;
 jmp_buf mwSIGSEGVjump;
-static void mwSIGSEGV( int n );
+MW_STATIC void mwSIGSEGV( int n );
 
-static void mwSIGSEGV( int n )
+MW_STATIC void mwSIGSEGV( int n )
 {
 	n = n;
 	longjmp( mwSIGSEGVjump, 1 );
@@ -2508,19 +2547,19 @@ int mwIsSafeAddr( void *p, unsigned len )
 
 #if defined(WIN32) || defined(__WIN32__)
 
-static void	mwMutexInit( void )
+MW_STATIC void	mwMutexInit( void )
 {
 	mwGlobalMutex = CreateMutex( NULL, FALSE, NULL);
 	return;
 }
 
-static void	mwMutexTerm( void )
+MW_STATIC void	mwMutexTerm( void )
 {
 	CloseHandle( mwGlobalMutex );
 	return;
 }
 
-static void	mwMutexLock( void )
+MW_STATIC void	mwMutexLock( void )
 {
 	if( WaitForSingleObject(mwGlobalMutex, 1000 ) == WAIT_TIMEOUT )
 	{
@@ -2529,7 +2568,7 @@ static void	mwMutexLock( void )
 	return;
 }
 
-static void	mwMutexUnlock( void )
+MW_STATIC void	mwMutexUnlock( void )
 {
 	ReleaseMutex( mwGlobalMutex );
 	return;
@@ -2539,25 +2578,25 @@ static void	mwMutexUnlock( void )
 
 #if defined(MW_PTHREADS) || defined(HAVE_PTHREAD_H)
 
-static void	mwMutexInit( void )
+MW_STATIC void	mwMutexInit( void )
 {
 	pthread_mutex_init( &mwGlobalMutex, NULL );
 	return;
 }
 
-static void	mwMutexTerm( void )
+MW_STATIC void	mwMutexTerm( void )
 {
 	pthread_mutex_destroy( &mwGlobalMutex );
 	return;
 }
 
-static void	mwMutexLock( void )
+MW_STATIC void	mwMutexLock( void )
 {
 	pthread_mutex_lock(&mwGlobalMutex);
 	return;
 }
 
-static void	mwMutexUnlock( void )
+MW_STATIC void	mwMutexUnlock( void )
 {
 	pthread_mutex_unlock(&mwGlobalMutex);
 	return;

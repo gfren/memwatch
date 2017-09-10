@@ -108,9 +108,9 @@ int main()
 
     /* May cause GP since MW will inspect the memory to see if it owns it. */
     free( (void*)main );
-    
+
     return 0;
 }
 
 /* Comment out the following line to compile. */
-#error "Hey! Don't just compile this program, read the comments first!"
+//#error "Hey! Don't just compile this program, read the comments first!"
