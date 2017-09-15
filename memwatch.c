@@ -1073,7 +1073,7 @@ char *mwStrdup( const char* str, const char* file, int line ) {
         }
 
     len = strlen( str ) + 1;
-    newstring = (char*) mwMalloc( len, file, line );
+    newstring = (char*) mwMallocNoLock( len, file, line );
     if( newstring != NULL ) memcpy( newstring, str, len );
 	MW_MUTEX_UNLOCK();
     return newstring;
